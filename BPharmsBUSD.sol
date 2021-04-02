@@ -191,7 +191,7 @@ contract BFarmsToken {
         address payable marketingAddr,
         address payable projectAddr,
         address tokenAddress
-    ) public {
+    ) {
         require(!isContract(marketingAddr), "!marketingAddr");
         require(!isContract(projectAddr), "!projectAddr");
 
@@ -203,7 +203,7 @@ contract BFarmsToken {
         } else {
             LAUNCH_TIME = 1616590800;
         }
-        TOKENInstance = IBEP20(BUSDAddress);
+        TOKENInstance = IBEP20(tokenAddress);
 
         plans.push(Plan(14, 80));
         plans.push(Plan(21, 65));

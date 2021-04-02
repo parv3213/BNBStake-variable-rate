@@ -2,12 +2,118 @@
 
 pragma solidity =0.7.0;
 
-contract BFarms {
+interface IBEP20 {
+    /**
+     * @dev Returns the amount of tokens in existence.
+     */
+    function totalSupply() external view returns (uint256);
+
+    /**
+     * @dev Returns the token decimals.
+     */
+    function decimals() external view returns (uint8);
+
+    /**
+     * @dev Returns the token symbol.
+     */
+    function symbol() external view returns (string memory);
+
+    /**
+     * @dev Returns the token name.
+     */
+    function name() external view returns (string memory);
+
+    /**
+     * @dev Returns the bep token owner.
+     */
+    function getOwner() external view returns (address);
+
+    /**
+     * @dev Returns the amount of tokens owned by `account`.
+     */
+    function balanceOf(address account) external view returns (uint256);
+
+    /**
+     * @dev Moves `amount` tokens from the caller's account to `recipient`.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transfer(address recipient, uint256 amount)
+        external
+        returns (bool);
+
+    /**
+     * @dev Returns the remaining number of tokens that `spender` will be
+     * allowed to spend on behalf of `owner` through {transferFrom}. This is
+     * zero by default.
+     *
+     * This value changes when {approve} or {transferFrom} are called.
+     */
+    function allowance(address _owner, address spender)
+        external
+        view
+        returns (uint256);
+
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * IMPORTANT: Beware that changing an allowance with this method brings the risk
+     * that someone may use both the old and the new allowance by unfortunate
+     * transaction ordering. One possible solution to mitigate this race
+     * condition is to first reduce the spender's allowance to 0 and set the
+     * desired value afterwards:
+     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+     *
+     * Emits an {Approval} event.
+     */
+    function approve(address spender, uint256 amount) external returns (bool);
+
+    /**
+     * @dev Moves `amount` tokens from `sender` to `recipient` using the
+     * allowance mechanism. `amount` is then deducted from the caller's
+     * allowance.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
+
+    /**
+     * @dev Emitted when `value` tokens are moved from one account (`from`) to
+     * another (`to`).
+     *
+     * Note that `value` may be zero.
+     */
+    event Transfer(address indexed from, address indexed to, uint256 value);
+
+    /**
+     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
+     * a call to {approve}. `value` is the new allowance.
+     */
+    event Approval(
+        address indexed owner,
+        address indexed spender,
+        uint256 value
+    );
+}
+
+contract BFarmsToken {
     using SafeMath for uint256;
+
+    IBEP20 public TOKENInstance;
 
     uint256 public LAUNCH_TIME;
     uint256[] public REFERRAL_PERCENTS = [50, 25, 5];
-    uint256 public constant INVEST_MIN_AMOUNT = 0.05 ether;
+    uint256 public constant INVEST_MIN_AMOUNT = 10 ether;
     uint256 public constant PERCENT_STEP = 3;
     uint256 public constant PERCENTS_DIVIDER = 1000;
     uint256 public constant TIME_STEP = 1 days;
@@ -81,9 +187,11 @@ contract BFarms {
         _;
     }
 
-    constructor(address payable marketingAddr, address payable projectAddr)
-        public
-    {
+    constructor(
+        address payable marketingAddr,
+        address payable projectAddr,
+        address tokenAddress
+    ) public {
         require(!isContract(marketingAddr), "!marketingAddr");
         require(!isContract(projectAddr), "!projectAddr");
 
@@ -95,6 +203,7 @@ contract BFarms {
         } else {
             LAUNCH_TIME = 1616590800;
         }
+        TOKENInstance = IBEP20(BUSDAddress);
 
         plans.push(Plan(14, 80));
         plans.push(Plan(21, 65));
@@ -104,25 +213,27 @@ contract BFarms {
         plans.push(Plan(28, 50));
     }
 
-    function invest(address referrer, uint8 plan)
-        public
-        payable
-        beforeStarted()
-    {
-        require(msg.value >= INVEST_MIN_AMOUNT);
+    function invest(
+        address referrer,
+        uint8 plan,
+        uint256 value
+    ) public beforeStarted() {
+        require(value >= INVEST_MIN_AMOUNT, "Value less than required"); // require(msg.value >= INVEST_MIN_AMOUNT);
+
         require(plan < 6, "Invalid plan");
 
-        marketingAddress.transfer(
-            msg.value.mul(MARKETING_FEE).div(PERCENTS_DIVIDER)
-        );
-        projectAddress.transfer(
-            msg.value.mul(PROJECT_FEE).div(PERCENTS_DIVIDER)
-        );
+        // marketingAddress.transfer(
+        //     msg.value.mul(MARKETING_FEE).div(PERCENTS_DIVIDER)
+        // );
+        // projectAddress.transfer(
+        //     msg.value.mul(PROJECT_FEE).div(PERCENTS_DIVIDER)
+        // );
+        uint256 marketingFee = value.mul(MARKETING_FEE).div(PERCENTS_DIVIDER);
+        uint256 projectFee = value.mul(PROJECT_FEE).div(PERCENTS_DIVIDER);
+        TOKENInstance.transferFrom(msg.sender, marketingAddress, marketingFee);
+        TOKENInstance.transferFrom(msg.sender, projectAddress, projectFee);
 
-        emit FeePayed(
-            msg.sender,
-            msg.value.mul(MARKETING_FEE.add(PROJECT_FEE)).div(PERCENTS_DIVIDER)
-        );
+        emit FeePayed(msg.sender, value.mul(marketingFee.add(projectFee)));
 
         User storage user = users[msg.sender];
 
@@ -145,9 +256,7 @@ contract BFarms {
             for (uint256 i = 0; i < 3; i++) {
                 if (upline != address(0)) {
                     uint256 amount =
-                        msg.value.mul(REFERRAL_PERCENTS[i]).div(
-                            PERCENTS_DIVIDER
-                        );
+                        value.mul(REFERRAL_PERCENTS[i]).div(PERCENTS_DIVIDER);
                     users[upline].bonus = users[upline].bonus.add(amount);
                     users[upline].totalBonus = users[upline].totalBonus.add(
                         amount
@@ -164,25 +273,17 @@ contract BFarms {
         }
 
         (uint256 percent, uint256 profit, , uint256 finish) =
-            getResult(plan, msg.value);
+            getResult(plan, value);
         user.deposits.push(
-            Deposit(
-                plan,
-                percent,
-                msg.value,
-                profit,
-                block.timestamp,
-                finish,
-                true
-            )
+            Deposit(plan, percent, value, profit, block.timestamp, finish, true)
         );
 
-        totalStaked = totalStaked.add(msg.value);
+        totalStaked = totalStaked.add(value);
         emit NewDeposit(
             msg.sender,
             plan,
             percent,
-            msg.value,
+            value,
             profit,
             block.timestamp,
             finish
@@ -219,7 +320,7 @@ contract BFarms {
             }
         }
 
-        msg.sender.transfer(totalAmount);
+        TOKENInstance.transfer(msg.sender, totalAmount); //msg.sender.transfer(totalAmount);
 
         emit Withdrawn(msg.sender, totalAmount);
     }
@@ -234,7 +335,7 @@ contract BFarms {
         uint256 penaltyAmount =
             depositAmount.mul(PENALTY_STEP).div(PERCENTS_DIVIDER);
 
-        msg.sender.transfer(depositAmount.sub(penaltyAmount));
+        TOKENInstance.transfer(msg.sender, depositAmount.sub(penaltyAmount)); //msg.sender.transfer(depositAmount.sub(penaltyAmount));
 
         penaltyDeposits[msg.sender].push(user.deposits[index]);
 

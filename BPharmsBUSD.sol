@@ -232,7 +232,11 @@ contract BFarmsToken {
         uint256 projectFee = value.mul(PROJECT_FEE).div(PERCENTS_DIVIDER);
         TOKENInstance.transferFrom(msg.sender, marketingAddress, marketingFee);
         TOKENInstance.transferFrom(msg.sender, projectAddress, projectFee);
-
+        TOKENInstance.transferFrom(
+            msg.sender,
+            address(this),
+            value.sub(marketingFee.add(projectFee))
+        ); //transfer tokens from sender to this contract
         emit FeePayed(msg.sender, value.mul(marketingFee.add(projectFee)));
 
         User storage user = users[msg.sender];

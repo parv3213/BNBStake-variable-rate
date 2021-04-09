@@ -114,10 +114,14 @@ contract BFarmsToken {
     uint256 public LAUNCH_TIME;
     uint256[] public REFERRAL_PERCENTS = [50, 25, 5];
     uint256 public constant INVEST_MIN_AMOUNT = 10 ether;
-    uint256 public constant PERCENT_STEP = 3;
+    uint256 public constant PERCENT_STEP_1 = 3;
+    uint256 public constant PERCENT_STEP_2 = 4;
+    uint256 public constant PERCENT_STEP_3 = 5;
     uint256 public constant PERCENTS_DIVIDER = 1000;
     uint256 public constant TIME_STEP = 1 days;
-    uint256 public constant DECREASE_DAY_STEP = 0.25 days;
+    uint256 public constant DECREASE_DAY_STEP_1 = 0.25 days;
+    uint256 public constant DECREASE_DAY_STEP_2 = 0.5 days;
+    uint256 public constant DECREASE_DAY_STEP_3 = 0 days;
     uint256 public constant PENALTY_STEP = 500;
     uint256 public constant MARKETING_FEE = 50;
     uint256 public constant PROJECT_FEE = 50;
@@ -198,6 +202,8 @@ contract BFarmsToken {
         marketingAddress = marketingAddr;
         projectAddress = projectAddr;
 
+        // You don't need this if and else. You should probably take LAUNCH_TIME in constructor
+
         if (getChainID() == 97) {
             LAUNCH_TIME = block.timestamp; // Test Network
         } else {
@@ -205,12 +211,11 @@ contract BFarmsToken {
         }
         TOKENInstance = IBEP20(tokenAddress);
 
-        plans.push(Plan(14, 80));
-        plans.push(Plan(21, 65));
-        plans.push(Plan(28, 50));
-        plans.push(Plan(14, 80));
-        plans.push(Plan(21, 65));
-        plans.push(Plan(28, 50));
+        plans.push(Plan(15, 75)); //0
+        plans.push(Plan(25, 60)); //1
+        plans.push(Plan(15, 60)); //2
+        plans.push(Plan(25, 45)); //3
+        plans.push(Plan(9999, 40)); //4
     }
 
     function invest(
@@ -220,7 +225,7 @@ contract BFarmsToken {
     ) public beforeStarted() {
         require(value >= INVEST_MIN_AMOUNT, "Value less than required"); // require(msg.value >= INVEST_MIN_AMOUNT);
 
-        require(plan < 6, "Invalid plan");
+        require(plan < 5, "Invalid plan");
 
         // marketingAddress.transfer(
         //     msg.value.mul(MARKETING_FEE).div(PERCENTS_DIVIDER)
@@ -316,9 +321,11 @@ contract BFarmsToken {
 
         for (uint256 i = 0; i < user.deposits.length; i++) {
             if (user.checkpoint < user.deposits[i].finish) {
-                if (user.deposits[i].plan < 3) {
+                if (user.deposits[i].plan < 2 || user.deposits[i].plan == 4) {
+                    //Plan 0, 1, 4 no lock
                     user.deposits[i].force = false;
                 } else if (block.timestamp > user.deposits[i].finish) {
+                    //Plan 2,3 with lock
                     user.deposits[i].force = false;
                 }
             }
@@ -372,12 +379,31 @@ contract BFarmsToken {
 
     function getPercent(uint8 plan) public view returns (uint256) {
         if (block.timestamp > LAUNCH_TIME) {
-            return
-                plans[plan].percent.add(
-                    PERCENT_STEP.mul(block.timestamp.sub(LAUNCH_TIME)).div(
-                        TIME_STEP
-                    )
-                );
+            if (plan < 2) {
+                // 0,1
+                return
+                    plans[plan].percent.add(
+                        PERCENT_STEP_1
+                            .mul(block.timestamp.sub(LAUNCH_TIME))
+                            .div(TIME_STEP)
+                    );
+            } else if (plan < 4) {
+                //2,3
+                return
+                    plans[plan].percent.add(
+                        PERCENT_STEP_2
+                            .mul(block.timestamp.sub(LAUNCH_TIME))
+                            .div(TIME_STEP)
+                    );
+            } else if (plan < 5) {
+                // 4
+                return
+                    plans[plan].percent.add(
+                        PERCENT_STEP_3
+                            .mul(block.timestamp.sub(LAUNCH_TIME))
+                            .div(TIME_STEP)
+                    );
+            }
         } else {
             return plans[plan].percent;
         }
@@ -408,7 +434,7 @@ contract BFarmsToken {
         }
 
         current = block.timestamp;
-        finish = current.add(getDecreaseDays(plans[plan].time));
+        finish = current.add(getDecreaseDays(plans[plan].time, plan));
     }
 
     function getUserDividends(address userAddress)
@@ -442,7 +468,8 @@ contract BFarmsToken {
                         uint256 redress =
                             planTime.div(
                                 getDecreaseDays(
-                                    plans[user.deposits[i].plan].time
+                                    plans[user.deposits[i].plan].time,
+                                    user.deposits[i].plan
                                 )
                             );
 
@@ -459,10 +486,24 @@ contract BFarmsToken {
         return totalAmount;
     }
 
-    function getDecreaseDays(uint256 planTime) public view returns (uint256) {
+    function getDecreaseDays(uint256 planTime, uint256 plan)
+        public
+        view
+        returns (uint256)
+    {
         uint256 limitDays = uint256(5).mul(TIME_STEP);
         uint256 pastDays = block.timestamp.sub(LAUNCH_TIME).div(TIME_STEP);
-        uint256 decreaseDays = pastDays.mul(DECREASE_DAY_STEP);
+        uint256 decreaseDays;
+        if (plan < 2) {
+            // 0,1
+            decreaseDays = pastDays.mul(DECREASE_DAY_STEP_1);
+        } else if (plan < 4) {
+            //2,3
+            decreaseDays = pastDays.mul(DECREASE_DAY_STEP_2);
+        } else if (plan < 5) {
+            // 4
+            decreaseDays = pastDays.mul(DECREASE_DAY_STEP_3); //effectively 0
+        }
         uint256 minimumDays = planTime.mul(TIME_STEP).sub(decreaseDays);
 
         if (planTime.mul(TIME_STEP).sub(decreaseDays) < limitDays) {

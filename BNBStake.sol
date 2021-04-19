@@ -270,7 +270,7 @@ contract BNBStake {
 
 		require(totalAmount > 0, "User has no dividends");
 
-		uint256 contractBalance = balanceOf(address(this));
+		uint256 contractBalance = BUSDInstance.balanceOf(address(this));
 		if (contractBalance < totalAmount) {
 			totalAmount = contractBalance;
 		}
